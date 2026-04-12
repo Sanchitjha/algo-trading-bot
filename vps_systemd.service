@@ -1,0 +1,23 @@
+[Unit]
+Description=Algo Trading Bot
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/algo-trading-bot
+ExecStart=/usr/bin/gunicorn app:app --workers 1 --bind 0.0.0.0:5000
+Restart=always
+RestartSec=10
+EnvironmentFile=/home/ubuntu/algo-trading-bot/.env
+
+[Install]
+WantedBy=multi-user.target
+
+# Usage:
+# 1. sudo cp vps_systemd.service /etc/systemd/system/algobot.service
+# 2. sudo systemctl daemon-reload
+# 3. sudo systemctl enable algobot.service
+# 4. sudo systemctl start algobot.service
+# 5. sudo systemctl status algobot.service
+# 6. sudo journalctl -u algobot.service -f  (logs)
