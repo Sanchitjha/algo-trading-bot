@@ -1,0 +1,9 @@
+flask==3.1.0
+gunicorn==22.0.0
+MetaTrader5==5.0.4424
+requests==2.32.3
+python-dotenv==1.0.1
+pandas==2.2.3
+numpy==2.0.2
+pandas_ta==0.3.14b1
+Backtesting==0.3.3
