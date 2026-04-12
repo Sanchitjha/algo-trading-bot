@@ -1,0 +1,72 @@
+//@version=6
+strategy("RSI + MACD + EMA Algo Strategy", overlay=true,
+         default_qty_type=strategy.percent_of_equity,
+         default_qty_value=2,
+         commission_type=strategy.commission.percent,
+         commission_value=0.05,
+         slippage=2,
+         calc_on_every_tick=false)
+
+// ─── INPUTS ────────────────────────────────────────────────────
+rsi_len     = input.int(14,   "RSI Length",       minval=1)
+rsi_ob      = input.int(70,   "RSI Overbought",   minval=50, maxval=100)
+rsi_os      = input.int(30,   "RSI Oversold",     minval=0,  maxval=50)
+ema_fast    = input.int(9,    "EMA Fast",         minval=1)
+ema_slow    = input.int(21,   "EMA Slow",         minval=1)
+macd_fast   = input.int(12,   "MACD Fast")
+macd_slow   = input.int(26,   "MACD Slow")
+macd_signal = input.int(9,    "MACD Signal")
+atr_len     = input.int(14,   "ATR Length")
+atr_mult    = input.float(1.5, "ATR SL Multiplier")
+rr_ratio    = input.float(2.0, "Risk:Reward Ratio")
+
+// ─── INDICATORS ─────────────────────────────────────────────────
+rsi_val  = ta.rsi(close, rsi_len)
+ema_f    = ta.ema(close, ema_fast)
+ema_s    = ta.ema(close, ema_slow)
+[macd_l, sig_l, hist] = ta.macd(close, macd_fast, macd_slow, macd_signal)
+atr_val  = ta.atr(atr_len)
+
+// ─── SIGNAL CONDITIONS ──────────────────────────────────────────
+// BUY: EMA bullish alignment + RSI recovering from oversold + MACD crossover
+bull_trend   = ema_f > ema_s
+rsi_buy      = ta.crossover(rsi_val, rsi_os)
+macd_buy     = ta.crossover(macd_l, sig_l)
+buy_signal   = bull_trend and (rsi_buy or macd_buy)
+
+// SELL: EMA bearish + RSI overbought or MACD crossunder
+bear_trend   = ema_f < ema_s
+rsi_sell     = ta.crossunder(rsi_val, rsi_ob)
+macd_sell    = ta.crossunder(macd_l, sig_l)
+sell_signal  = bear_trend and (rsi_sell or macd_sell)
+
+// ─── ATR-BASED DYNAMIC SL/TP ────────────────────────────────────
+sl_distance  = atr_val * atr_mult
+tp_distance  = sl_distance * rr_ratio
+
+long_sl  = close - sl_distance
+long_tp  = close + tp_distance
+short_sl = close + sl_distance
+short_tp = close - tp_distance
+
+// ─── ENTRIES ────────────────────────────────────────────────────
+if buy_signal and strategy.position_size == 0
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long Exit", "Long", stop=long_sl, limit=long_tp)
+    alert('{"action":"buy","symbol":"' + syminfo.ticker + '","sl":' + str.tostring(long_sl) + ',"tp":' + str.tostring(long_tp) + ',"risk_pct":1.0}', alert.freq_once_per_bar_close)
+
+if sell_signal and strategy.position_size == 0
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short Exit", "Short", stop=short_sl, limit=short_tp)
+    alert('{"action":"sell","symbol":"' + syminfo.ticker + '","sl":' + str.tostring(short_sl) + ',"tp":' + str.tostring(short_tp) + ',"risk_pct":1.0}', alert.freq_once_per_bar_close)
+
+// ─── PLOTS ──────────────────────────────────────────────────────
+plot(ema_f, "EMA Fast", color=color.new(color.blue, 0),   linewidth=1)
+plot(ema_s, "EMA Slow", color=color.new(color.orange, 0), linewidth=2)
+plotshape(buy_signal,  "BUY",  shape.triangleup,   location.belowbar, color.green, size=size.small)
+plotshape(sell_signal, "SELL", shape.triangledown, location.abovebar, color.red,   size=size.small)
+
+// ─── RSI PANEL ──────────────────────────────────────────────────
+// hline(rsi_ob, "Overbought", color=color.red,    linestyle=hline.style_dashed)
+// hline(rsi_os, "Oversold",   color=color.green,  linestyle=hline.style_dashed)
+// plot(rsi_val, "RSI", color=color.purple)
