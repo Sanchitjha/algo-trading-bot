@@ -1,0 +1,72 @@
+//@version=6
+strategy("Algo Swing 1H — RSI + MACD + EMA", overlay=true,
+         default_qty_type=strategy.percent_of_equity,
+         default_qty_value=2,
+         commission_type=strategy.commission.percent,
+         commission_value=0.05,
+         slippage=2,
+         calc_on_every_tick=false)
+
+// ─── INPUTS ────────────────────────────────────────────────────
+rsi_len     = input.int(14,   "RSI Length",        minval=1)
+rsi_ob      = input.int(70,   "RSI Overbought",    minval=50, maxval=100)
+rsi_os      = input.int(30,   "RSI Oversold",      minval=0,  maxval=50)
+ema_fast    = input.int(9,    "EMA Fast",          minval=1)
+ema_slow    = input.int(21,   "EMA Slow",          minval=1)
+ema_trend   = input.int(200,  "EMA 200 (Trend)",   minval=50)
+macd_fast   = input.int(12,   "MACD Fast")
+macd_slow   = input.int(26,   "MACD Slow")
+macd_signal = input.int(9,    "MACD Signal")
+atr_len     = input.int(14,   "ATR Length")
+atr_mult    = input.float(1.5, "ATR SL Multiplier")
+rr_ratio    = input.float(2.0, "Risk:Reward Ratio")
+use_200ema  = input.bool(true, "Require price above/below 200 EMA")
+
+// ─── INDICATORS ─────────────────────────────────────────────────
+rsi_val  = ta.rsi(close, rsi_len)
+ema_f    = ta.ema(close, ema_fast)
+ema_s    = ta.ema(close, ema_slow)
+ema_200  = ta.ema(close, ema_trend)
+[macd_l, sig_l, hist] = ta.macd(close, macd_fast, macd_slow, macd_signal)
+atr_val  = ta.atr(atr_len)
+
+// ─── SIGNAL CONDITIONS ──────────────────────────────────────────
+// Trend: Fast EMA > Slow EMA + Price above 200 EMA (major trend)
+bull_trend  = ema_f > ema_s and (not use_200ema or close > ema_200)
+bear_trend  = ema_f < ema_s and (not use_200ema or close < ema_200)
+
+// Entry triggers — confluence required
+rsi_buy     = ta.crossover(rsi_val, rsi_os)
+macd_buy    = ta.crossover(macd_l, sig_l) and macd_l < 0  // MACD cross while below zero = stronger signal
+buy_signal  = bull_trend and (rsi_buy or macd_buy)
+
+rsi_sell    = ta.crossunder(rsi_val, rsi_ob)
+macd_sell   = ta.crossunder(macd_l, sig_l) and macd_l > 0
+sell_signal = bear_trend and (rsi_sell or macd_sell)
+
+// ─── ATR SL/TP ─────────────────────────────────────────────────
+sl_dist  = atr_val * atr_mult
+tp_dist  = sl_dist * rr_ratio
+
+long_sl  = close - sl_dist
+long_tp  = close + tp_dist
+short_sl = close + sl_dist
+short_tp = close - tp_dist
+
+// ─── ENTRIES ────────────────────────────────────────────────────
+if buy_signal and strategy.position_size == 0
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long Exit", "Long", stop=long_sl, limit=long_tp)
+    alert('{"action":"buy","symbol":"' + syminfo.ticker + '","sl":' + str.tostring(long_sl) + ',"tp":' + str.tostring(long_tp) + ',"risk_pct":1.0,"comment":"Swing 1H"}', alert.freq_once_per_bar_close)
+
+if sell_signal and strategy.position_size == 0
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short Exit", "Short", stop=short_sl, limit=short_tp)
+    alert('{"action":"sell","symbol":"' + syminfo.ticker + '","sl":' + str.tostring(short_sl) + ',"tp":' + str.tostring(short_tp) + ',"risk_pct":1.0,"comment":"Swing 1H"}', alert.freq_once_per_bar_close)
+
+// ─── PLOTS ──────────────────────────────────────────────────────
+plot(ema_f,   "EMA 9",   color.new(color.blue, 0),   linewidth=1)
+plot(ema_s,   "EMA 21",  color.new(color.orange, 0), linewidth=2)
+plot(ema_200, "EMA 200", color.new(color.gray, 30),  linewidth=3)
+plotshape(buy_signal,  "BUY",  shape.triangleup,   location.belowbar, color.green, size=size.small)
+plotshape(sell_signal, "SELL", shape.triangledown, location.abovebar, color.red,   size=size.small)
