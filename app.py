@@ -215,6 +215,33 @@ def pineconnector():
     if signal is None:
         return jsonify({'error': 'Invalid PineConnector format'}), 400
 
+    # ── Convert sl_pips / tp_pips → absolute price ──────────────
+    # PineConnector alerts may send pips instead of absolute prices.
+    # We resolve the current price from MT5 and compute absolute SL/TP.
+    if signal.get('sl') is None and signal.get('sl_pips') is not None:
+        symbol = signal['symbol']
+        action = signal['action']
+        if action in ('buy', 'sell'):
+            tick     = mt5.symbol_info_tick(symbol)
+            sym_info = mt5.symbol_info(symbol)
+            if tick and sym_info:
+                entry     = tick.ask if action == 'buy' else tick.bid
+                pip_size  = sym_info.point * 10   # 1 pip = 10 points for most pairs
+                sl_pips   = signal.pop('sl_pips', 0)
+                tp_pips   = signal.pop('tp_pips', 0)
+                if action == 'buy':
+                    signal['sl'] = round(entry - sl_pips * pip_size, 5)
+                    signal['tp'] = round(entry + tp_pips * pip_size, 5)
+                else:
+                    signal['sl'] = round(entry + sl_pips * pip_size, 5)
+                    signal['tp'] = round(entry - tp_pips * pip_size, 5)
+                logging.info(
+                    f"PineConnector pips resolved: entry={entry}, "
+                    f"SL={signal['sl']}, TP={signal['tp']}"
+                )
+            else:
+                return jsonify({'error': f'Cannot get tick data for {symbol}'}), 500
+
     response, status = execute_trade(signal)
     return jsonify(response), status
 
