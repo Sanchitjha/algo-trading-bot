@@ -325,6 +325,25 @@ def status():
 
 
 # ─── STARTUP ─────────────────────────────────────────────────
+# This runs under BOTH direct execution AND Gunicorn (cloud deployment).
+# Gunicorn does NOT run __main__, so we use a startup flag to ensure
+# initialization only happens once.
+_started = False
+
+@app.before_request
+def _on_first_request():
+    """Initialize bot on the very first HTTP request (Gunicorn-safe)."""
+    global _started
+    if not _started:
+        _started = True
+        try:
+            send_startup_message()
+            trailing_manager.start()
+            logging.info("Bot initialized via first-request hook")
+        except Exception as e:
+            logging.error(f"Startup hook error: {e}")
+
+
 if __name__ == '__main__':
     send_startup_message()
     trailing_manager.start()
