@@ -1,0 +1,39 @@
+# Systemd service file for Algo Trading Bot
+# Place at: /etc/systemd/system/algobot.service
+#
+# Commands:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable algobot
+#   sudo systemctl start algobot
+#   sudo systemctl status algobot
+#   journalctl -u algobot -f   (view logs)
+
+[Unit]
+Description=Algo Trading Bot - Flask Webhook Server
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/algo-trading-bot
+EnvironmentFile=/home/ubuntu/algo-trading-bot/.env
+ExecStart=/usr/bin/gunicorn app:app --workers 1 --timeout 120 --bind 0.0.0.0:5000 --access-logfile logs/access.log
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/algo-trading-bot/logs
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=algobot
+
+[Install]
+WantedBy=multi-user.target
