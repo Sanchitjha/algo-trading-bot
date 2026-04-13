@@ -1,0 +1,83 @@
+//@version=6
+strategy("Algo Scalping 5m — Stoch RSI + MACD", overlay=true,
+         default_qty_type=strategy.percent_of_equity,
+         default_qty_value=1,
+         commission_type=strategy.commission.percent,
+         commission_value=0.04,
+         slippage=3,
+         calc_on_every_tick=false)
+
+// ─── INPUTS ────────────────────────────────────────────────────
+ema_fast    = input.int(8,    "EMA Fast",          minval=1)
+ema_slow    = input.int(21,   "EMA Slow",          minval=1)
+stoch_k     = input.int(14,   "Stoch K",           minval=1)
+stoch_d     = input.int(3,    "Stoch D",           minval=1)
+stoch_smooth= input.int(3,    "Stoch Smooth",      minval=1)
+stoch_ob    = input.int(80,   "Stoch Overbought",  minval=50, maxval=100)
+stoch_os    = input.int(20,   "Stoch Oversold",    minval=0,  maxval=50)
+macd_fast   = input.int(8,    "MACD Fast (scalp)")
+macd_slow   = input.int(17,   "MACD Slow (scalp)")
+macd_signal = input.int(9,    "MACD Signal")
+atr_len     = input.int(14,   "ATR Length")
+atr_mult    = input.float(1.0, "ATR SL Multiplier (tight for scalp)")
+rr_ratio    = input.float(1.5, "Risk:Reward Ratio")
+
+// ─── SESSION FILTER (London + NY overlap only) ─────────────────
+is_session  = input.bool(true, "Use Session Filter")
+london_start = input.session("0800-1200", "London Session")
+ny_overlap   = input.session("1300-1700", "NY Overlap Session")
+in_london    = not na(time(timeframe.period, london_start))
+in_ny        = not na(time(timeframe.period, ny_overlap))
+session_ok   = not is_session or in_london or in_ny
+
+// ─── INDICATORS ─────────────────────────────────────────────────
+ema_f   = ta.ema(close, ema_fast)
+ema_s   = ta.ema(close, ema_slow)
+
+// Stochastic RSI
+rsi1    = ta.rsi(close, 14)
+stoch_rsi_k = ta.sma(ta.stoch(rsi1, rsi1, rsi1, stoch_k), stoch_smooth)
+stoch_rsi_d = ta.sma(stoch_rsi_k, stoch_d)
+
+[macd_l, sig_l, hist] = ta.macd(close, macd_fast, macd_slow, macd_signal)
+atr_val = ta.atr(atr_len)
+
+// ─── SIGNAL CONDITIONS ──────────────────────────────────────────
+bull_trend  = ema_f > ema_s
+bear_trend  = ema_f < ema_s
+
+// Stoch RSI bounce from oversold + MACD confirmation
+stoch_buy   = ta.crossover(stoch_rsi_k, stoch_os) and stoch_rsi_k < 30
+macd_buy    = ta.crossover(macd_l, sig_l)
+buy_signal  = session_ok and bull_trend and stoch_buy and macd_buy
+
+stoch_sell  = ta.crossunder(stoch_rsi_k, stoch_ob) and stoch_rsi_k > 70
+macd_sell   = ta.crossunder(macd_l, sig_l)
+sell_signal = session_ok and bear_trend and stoch_sell and macd_sell
+
+// ─── ATR SL/TP ─────────────────────────────────────────────────
+sl_dist     = atr_val * atr_mult
+tp_dist     = sl_dist * rr_ratio
+
+long_sl     = close - sl_dist
+long_tp     = close + tp_dist
+short_sl    = close + sl_dist
+short_tp    = close - tp_dist
+
+// ─── ENTRIES ────────────────────────────────────────────────────
+if buy_signal and strategy.position_size == 0
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long X", "Long", stop=long_sl, limit=long_tp)
+    alert('{"action":"buy","symbol":"' + syminfo.ticker + '","sl":' + str.tostring(long_sl) + ',"tp":' + str.tostring(long_tp) + ',"risk_pct":0.5,"comment":"Scalp 5m"}', alert.freq_once_per_bar_close)
+
+if sell_signal and strategy.position_size == 0
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short X", "Short", stop=short_sl, limit=short_tp)
+    alert('{"action":"sell","symbol":"' + syminfo.ticker + '","sl":' + str.tostring(short_sl) + ',"tp":' + str.tostring(short_tp) + ',"risk_pct":0.5,"comment":"Scalp 5m"}', alert.freq_once_per_bar_close)
+
+// ─── PLOTS ──────────────────────────────────────────────────────
+plot(ema_f, "EMA Fast", color.new(color.aqua, 0), linewidth=1)
+plot(ema_s, "EMA Slow", color.new(color.yellow, 0), linewidth=2)
+plotshape(buy_signal,  "BUY",  shape.triangleup,   location.belowbar, color.lime,  size=size.tiny)
+plotshape(sell_signal, "SELL", shape.triangledown, location.abovebar, color.fuchsia, size=size.tiny)
+bgcolor(session_ok ? na : color.new(color.gray, 90), title="Off Session")
